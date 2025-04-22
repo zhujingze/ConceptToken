@@ -1,0 +1,5 @@
+yes
+Added stop word:  Q: with the ids [29984, 29901]
+MODE: dola decoding with the final layer: 32 and premature layers: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31]
+Final MC1/2/3: 
+0.3219094247246022, 0.6257430254283998, 0.3035617143634283

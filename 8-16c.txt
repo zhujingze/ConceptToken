@@ -1,0 +1,4 @@
+Added stop word:  Q: with the ids [29984, 29901]
+Vanilla greedy decoding from the final layer
+Final MC1/2/3: 
+0.2876376988984088, 0.44454385377334504, 0.2068616308212393
