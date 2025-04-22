@@ -145,27 +145,6 @@ def get_token_indices(models,tokens):
     #print(words)
     tagged = pos_tag(words)
     
-    # # 简化版分类逻辑（需根据实际 token_set 实现调整）
-    # p_indices, cn_indices, ca_indices, cv_indices, nc_indices = [], [], [], [], []
-    # for idx, (word, tag) in enumerate(tagged):
-    #     word_clean = re.sub(r'^[\\\'"\-]+', '', word)
-    #     if word_clean in {'<s>', '<0x0A>'} or is_punct(word):
-    #         p_indices.extend(columns_list[idx])
-    #     elif tag.startswith('N') or tag in ['CD', 'PRP']:
-    #         cn_indices.extend(columns_list[idx])
-    #     elif tag.startswith('J'):
-    #         ca_indices.extend(columns_list[idx])
-    #     elif tag.startswith('V'):
-    #         cv_indices.extend(columns_list[idx])
-    #     else:
-    #         nc_indices.extend(columns_list[idx])
-            
-    #p_indices, cn_indices, ca_indices, nc_indices, cv_indices = token_set(tagged)
-    #print('incl',p_indices, cn_indices, ca_indices, nc_indices, cv_indices)
-    punctuation_set, concept_n, concept_adj, no_concept, concept_v = token_set(tagged)
-    #print('attn',punctuation_set, concept_n, concept_adj, no_concept, concept_v)
-    
-    # 对应token标签汇聚 便于整体操作
     if punctuation_set:
         ### token idx
         p_idx = [num for idx in punctuation_set for num in columns_list[idx]]
@@ -295,7 +274,7 @@ class SLED_DecodedLLM_TruthfulQA:
                 #if post_softmax:
                 outputs = outputs.log_softmax(-1)
                 outputs_ori = outputs[prefix_ids.shape[-1] - 1: -1, :]
-                log_probs = outputs_ori[range(outputs_ori.shape[0]), continue_ids].sum().item()
+                #log_probs = outputs_ori[range(outputs_ori.shape[0]), continue_ids].sum().item()
                 
                 ###cd
                 query_tokens = input_ids.tolist()
@@ -339,11 +318,14 @@ class SLED_DecodedLLM_TruthfulQA:
                 outputs_modified = outputs_modified.log_softmax(-1)
                 outputs_modified = outputs_modified[prefix_ids.shape[-1] - 1: -1, :]
                 outputs_cd = outputs_ori - outputs_modified
+                
                 if post_softmax:
                     outputs_cd = outputs_cd.log_softmax(dim=-1)
-                # get logprobs for each token in the answer
+                if relative_top > 0.0:
+                    relative_top_mask = self.get_relative_top_filter(outputs_ori, relative_top)
+                    outputs_cd = torch.where(relative_top_mask, relative_top_value, outputs_cd)
+
                 log_probs = outputs_cd[range(outputs_cd.shape[0]), continue_ids].sum().item()
-                #print('ori', outputs_ori[range(outputs_ori.shape[0]), continue_ids].sum().item(), 'after', outputs_modified[range(outputs_modified.shape[0]), continue_ids].sum().item())
                 llama_restore(self.model, 'llama', start_layer=2, end_layer=16)
                 
             elif mode == 'dola':
@@ -486,22 +468,3 @@ class SLED_DecodedLLM_TruthfulQA:
                 log_probs = log_new_output_logits[range(log_new_output_logits.shape[0]), continue_ids].sum().item()
 
         return log_probs, (premature_layer_dist if mode == 'dola' else None)
-
-    def get_relative_top_filter(self, scores: torch.FloatTensor, relative_top: float = 0.1,
-                                min_tokens_to_keep: int = 1):
-
-        scores_normalized = scores.log_softmax(dim=-1)
-
-        sorted_logits, sorted_indices = torch.sort(scores_normalized, descending=True)
-
-        min_thresh = sorted_logits[..., min_tokens_to_keep - 1]
-
-        probs_max = torch.max(scores_normalized, dim=-1).values
-
-        probs_thresh = probs_max + np.log(relative_top)
-
-        probs_thresh = torch.min(min_thresh, probs_thresh)
-
-        probs_thresh = probs_thresh.unsqueeze(-1)
-
-        return scores_normalized < probs_thresh
