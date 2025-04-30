@@ -12,7 +12,6 @@ import numpy as np
 import warnings
 from sled_decoding import SLED_DecodedLLM_TruthfulQA as SLED_DecodedLLM
 from concept import Concept
-
 transformers.logging.set_verbosity(40)
 
 
@@ -37,8 +36,14 @@ if __name__ == "__main__":
     parser.add_argument("--attn_alpha", type=float)
     parser.add_argument("--token_enhance", type=str)
     parser.add_argument("--token_weaken", type=str)
-    parser.add_argument("--alpha", type=float)
-
+    parser.add_argument("--beta", type=float)
+    parser.add_argument("--sink", type=bool)
+    parser.add_argument("--ema", type=bool)
+    parser.add_argument("--th", type=float)
+    parser.add_argument("--sink_layers",
+                   type=lambda s: [int(x) for x in s.split(',')],
+                   default=[],
+                   help="要启用的层号列表，用逗号分隔（例如：'1,3,5'）")
 
     args = parser.parse_args()
     model_name = args.model_name
@@ -49,7 +54,11 @@ if __name__ == "__main__":
     attn_alpha=args.attn_alpha
     token_enhance=args.token_enhance
     token_weaken=args.token_weaken
-    alpha = args.alpha
+    beta = args.beta
+    sink = args.sink
+    sink_layers = args.sink_layers
+    ema = args.ema
+    th = args.th
 
     # Get test file
     '''
@@ -105,20 +114,22 @@ if __name__ == "__main__":
 
 
             for temp_ans in ref_true:
-                prompt, answer = build_prompt_and_answer(sample['question'], temp_ans)
-                #print('p&a', prompt, answer)
-                log_probs, c_dist = llm.lm_score(prompt, answer, start_layer=start_layer, end_layer=end_layer, attn_alpha=attn_alpha, token_enhance=token_enhance, token_weaken=token_weaken, alpha=alpha,**generate_kwargs)
+                prompt, answer, demo, question = build_prompt_and_answer(sample['question'], temp_ans)
+                # print('true')
+                log_probs, c_dist = llm.lm_score(prompt, answer, demo, question, start_layer=start_layer, end_layer=end_layer, attn_alpha=attn_alpha, token_enhance=token_enhance, token_weaken=token_weaken, beta=beta,sink=sink,sink_layers=sink_layers,ema=ema,th=th,**generate_kwargs)
                 scores_true.append(log_probs)
 
 
             for temp_ans in ref_false:
-                prompt, answer = build_prompt_and_answer(sample['question'], temp_ans)
-                log_probs, c_dist = llm.lm_score(prompt, answer, start_layer=start_layer, end_layer=end_layer, attn_alpha=attn_alpha, token_enhance=token_enhance, token_weaken=token_weaken, alpha=alpha,**generate_kwargs)
+                prompt, answer, demo, question = build_prompt_and_answer(sample['question'], temp_ans)
+                #print('true', answer)
+                log_probs, c_dist = llm.lm_score(prompt, answer, demo, question, start_layer=start_layer, end_layer=end_layer, attn_alpha=attn_alpha, token_enhance=token_enhance, token_weaken=token_weaken, beta=beta,sink=sink,sink_layers=sink_layers,ema=ema,th=th,**generate_kwargs)
                 scores_false.append(log_probs)
 
 
-
+            #print('output',scores_true, scores_false)
             scores = MC_calcs(scores_true, scores_false, ref_true, ref_best)
+            #print('score', scores)
             # check nan in mc1/2/3
             if np.isnan(scores['MC1']) or np.isnan(scores['MC2']) or np.isnan(scores['MC3']):
                 import ipdb;
@@ -137,9 +148,12 @@ if __name__ == "__main__":
     result_dict['total_mc1'] /= len(result_dict['question'])
     result_dict['total_mc2'] /= len(result_dict['question'])
     result_dict['total_mc3'] /= len(result_dict['question'])
+    if 'llama3' in model_name:
+        name = 'llama3'
+    else:
+        name = 'llama2'
 
-
-    print(f'Final MC1/2/3: \n{result_dict["total_mc1"]}, {result_dict["total_mc2"]}, {result_dict["total_mc3"]}')
+    print(f'{name}_{args.decoding_method}_{args.start_layer}-{args.end_layer}_a{args.attn_alpha}_b{args.beta}_s{args.sink}_th{th}_ema{ema},Final MC1/2/3: \n{result_dict["total_mc1"]}, {result_dict["total_mc2"]}, {result_dict["total_mc3"]}')
 
     model_tag = model_name.split('/')[-1] if model_name[-1] != '/' else model_name.split('/')[-2]
     with open(args.output_path, 'w') as f:
