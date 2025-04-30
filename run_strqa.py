@@ -1,23 +1,20 @@
-# Ref: https://github.com/kojima-takeshi188/zero_shot_cot
-# Ref: https://github.com/voidism/DoLa
-
 import transformers
 from tqdm import tqdm, trange
 import argparse
 from utils.utils_strqa import *
-from sled_decoding import SLED_DecodedLLM_StrQA as SLED_DecodedLLM
+from sled_decoding_gen import SLED_DecodedLLM_StrQA as SLED_DecodedLLM
 import json
 import warnings
 transformers.logging.set_verbosity(40)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model-name", type=str, default="meta-llama/Llama-2-7b-hf")
-    parser.add_argument("--num-gpus", type=str, default="1")
+    parser.add_argument("--model_name", type=str, default="meta-llama/Llama-2-7b-hf")
+    parser.add_argument("--num_gpus", type=str, default="1")
     parser.add_argument("--max_gpu_memory", type=int, default=80)
     parser.add_argument("--device", type=str, choices=["cuda", "cpu"], default="cuda")
-    parser.add_argument("--data-path", type=str, default="Data/StrategyQA")
-    parser.add_argument("--output-path", type=str, default="./strqa_result")
+    parser.add_argument("--data_path", type=str, default="Data/StrategyQA")
+    parser.add_argument("--output_path", type=str, default="./strqa_result")
     parser.add_argument("--early-exit-layers", type=str, default=None)
     parser.add_argument("--max-new-tokens", type=int, default=256)
     parser.add_argument("--top_p", type=float, default=0.95)
@@ -30,9 +27,20 @@ if __name__ == "__main__":
     parser.add_argument("--do_shuffle", action="store_true")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--retry", type=int, default=1)
-    parser.add_argument("--decoding_method", type=str, default="VanillaGreedy", choices=["VanillaGreedy", "SLED", "dola"])
+    parser.add_argument("--decoding_method", type=str, default="VanillaGreedy", choices=["VanillaGreedy", "SLED", "dola","attn"])
     parser.add_argument("--evolution_rate", type=float, default=2)
     parser.add_argument("--evolution_scale", type=int, default=10)
+    parser.add_argument("--start_layer", type=int)
+    parser.add_argument("--end_layer", type=int)
+    parser.add_argument("--attn_alpha", type=float)
+    parser.add_argument("--token_enhance", type=str)
+    parser.add_argument("--token_weaken", type=str)
+    parser.add_argument("--beta", type=float)
+    parser.add_argument("--sink", type=bool)
+    parser.add_argument("--sink_layers",
+                   type=lambda s: [int(x) for x in s.split(',')],
+                   default=[],
+                   help="要启用的层号列表，用逗号分隔（例如：'1,3,5'）")
 
 
     
@@ -40,6 +48,15 @@ if __name__ == "__main__":
     model_name = args.model_name
     num_gpus = args.num_gpus
     device = args.device
+    start_layer=args.start_layer
+    end_layer=args.end_layer
+    attn_alpha=args.attn_alpha
+    token_enhance=args.token_enhance
+    token_weaken=args.token_weaken
+    beta = args.beta
+    sink = args.sink
+    sink_layers = args.sink_layers
+
 
     set_seed(args.seed)
     list_data_dict = load_strqa_jsonl(args.data_path)
@@ -49,7 +66,7 @@ if __name__ == "__main__":
     stop_word_list = ["Q:", "\n\n##"]
     llm.set_stop_words(stop_word_list)
 
-    if args.decoding_method == "VanillaGreedy":
+    if args.decoding_method in ["VanillaGreedy", "attn"]:
         if args.early_exit_layers is not None:
             warnings.warn("The 'early_exit_layers' argument should be None when using Vanilla greedy decoding.")
         print("Vanilla greedy decoding from the final layer", flush=True)
@@ -79,7 +96,7 @@ if __name__ == "__main__":
         model_answer = None
         for i in range(retry_times):
             input_text = build_prompt(sample['question'], args.do_shuffle)
-            generate_kwargs = dict(max_new_tokens=args.max_new_tokens, do_sample=args.do_sample, top_p=args.top_p, top_k=args.top_k, temperature=args.temperature, repetition_penalty=args.repetition_penalty, mode=args.decoding_method, mature_layer=mature_layer, candidate_premature_layers=candidate_premature_layers, relative_top=args.relative_top,relative_top_value=args.relative_top_value,evolution_rate=args.evolution_rate,evolution_scale=args.evolution_scale)
+            generate_kwargs = dict(sink_layers=sink_layers,sink=sink,beta=beta,token_weaken=token_weaken,token_enhance=token_enhance,attn_alpha=attn_alpha,start_layer=start_layer,end_layer=end_layer,max_new_tokens=args.max_new_tokens, do_sample=args.do_sample, top_p=args.top_p, top_k=args.top_k, temperature=args.temperature, repetition_penalty=args.repetition_penalty, mode=args.decoding_method, mature_layer=mature_layer, candidate_premature_layers=candidate_premature_layers, relative_top=args.relative_top,relative_top_value=args.relative_top_value,evolution_rate=args.evolution_rate,evolution_scale=args.evolution_scale)
             model_completion, c_dist = llm.generate(input_text, **generate_kwargs)
             for stop_word in stop_word_list:
                 length_to_remove = len(stop_word)
@@ -105,3 +122,4 @@ if __name__ == "__main__":
     model_tag = model_name.split('/')[-1] if model_name[-1] != '/' else model_name.split('/')[-2]
     with open(args.output_path, 'w') as f:
         json.dump(result_dict, f)
+
