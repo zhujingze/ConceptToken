@@ -257,6 +257,7 @@ from typing import List, Optional
 
 def llama_modify_adaptive(
     model,
+    tokenizer,
     model_name: str,
     start_layer: int,
     end_layer: int,
@@ -301,6 +302,7 @@ def llama_modify_adaptive(
         self_attn.layer_idx = i  # 当前层索引
         self_attn.model = model  # 模型引用
         self_attn.use_attn = use_attn
+        self_attn.model_name = model_name
         self_attn.alpha = alpha
         self_attn.first_token_idx = first_token_idx
         self_attn.token_enhance = token_enhance
@@ -312,6 +314,7 @@ def llama_modify_adaptive(
         self_attn.s_idx = s_idx
         self_attn.ave_token = ave_token
         self_attn.start_layer = start_layer
+        self_attn.tokenizer = tokenizer
         # 如果在 special_layers 中则覆盖 sink 值
         self_attn.sink = (i in special_layers) if special_layers else False
 
