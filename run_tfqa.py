@@ -2,6 +2,10 @@
 # Ref: https://github.com/sylinrl/TruthfulQA/blob/main/truthfulqa/metrics.py
 # Ref: https://github.com/sylinrl/TruthfulQA/blob/main/truthfulqa/utilities.py
 # Ref: https://github.com/voidism/DoLa
+# Ref: https://github.com/kojima-takeshi188/zero_shot_cot
+# Ref: https://github.com/sylinrl/TruthfulQA/blob/main/truthfulqa/metrics.py
+# Ref: https://github.com/sylinrl/TruthfulQA/blob/main/truthfulqa/utilities.py
+# Ref: https://github.com/voidism/DoLa
 
 from utils.utils_truthfulqa import *
 import transformers
