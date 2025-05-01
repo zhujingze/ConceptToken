@@ -676,7 +676,6 @@ class SLED_DecodedLLM_Factor:
                 # if post_softmax:
                 #     outputs = outputs.log_softmax(-1)
                 outputs_ori = outputs[prefix_ids.shape[-1] - 1: -1, :]
-                
                 ###cd
                 query_tokens = input_ids.tolist()
                 #print(query_tokens, prompt_ids.tolist())
@@ -749,8 +748,8 @@ class SLED_DecodedLLM_Factor:
                 outputs_modified_log = outputs_modified_log[prefix_ids.shape[-1] - 1: -1, :]
                 
                 outputs_modified = outputs_modified[prefix_ids.shape[-1] - 1: -1, :]
-                #outputs_cd = beta*outputs_ori_log +(outputs_ori_log- outputs_modified_log)
-                outputs_cd=outputs_modified_log
+                outputs_cd = beta*outputs_ori_log +(outputs_ori_log- outputs_modified_log)
+                #outputs_cd=outputs_modified_log
                 if post_softmax:
                     outputs_cd = outputs_cd.log_softmax(dim=-1)
                 # if relative_top > 0.0:
@@ -973,7 +972,7 @@ class SLED_DecodedLLM_MMLU:
     def lm_score(self, input_text1, input_text2, start_layer, end_layer, attn_alpha, token_enhance, token_weaken, beta, sink, pmi=False,
                 mature_layer=None, premature_layer=None, candidate_premature_layers=[], mode='VanillaGreedy',
                 verbose=True,
-                remove_stop_words=False, relative_top=0.1, relative_top_value=-1000.0, post_softmax=True,
+                remove_stop_words=False, relative_top=0.1, relative_top_value=-1000.0, post_softmax=False,
                 evolution_rate=2, evolution_scale=10, evolution_lower_bound=-2500, **kwargs):
         with torch.no_grad():
             input_text = input_text1 + input_text2
@@ -1024,7 +1023,19 @@ class SLED_DecodedLLM_MMLU:
                 else:
                     token_weaken_idx = None
                 #print('idx',token_weaken_idx)
-                llama_modify(
+                # llama_modify(
+                #     self.model,
+                #     'llama',
+                #     start_layer=start_layer,
+                #     end_layer=end_layer,
+                #     use_attn=True,
+                #     alpha=attn_alpha,
+                #     first_token_idx=prefix_ids.shape[-1] - 1,
+                #     token_enhance=token_enhance_idx,
+                #     token_weaken=token_weaken_idx,
+                #     sink = sink
+                # )
+                llama_modify_adaptive(
                     self.model,
                     'llama',
                     start_layer=start_layer,
@@ -1034,7 +1045,14 @@ class SLED_DecodedLLM_MMLU:
                     first_token_idx=prefix_ids.shape[-1] - 1,
                     token_enhance=token_enhance_idx,
                     token_weaken=token_weaken_idx,
-                    sink = sink
+                    n_idx=nc_idx,
+                    c_idx=ac_idx,
+                    s_idx=p_idx,
+                    th=th,
+                    ave_token= torch.zeros((1, outputs.shape[0] - prefix_ids.shape[-1]+1), dtype=torch.float32), # C
+                    sink = sink,
+                    ema = ema,
+                    special_layers=sink_layers
                 )
                 
                 outputs_modified =self.model(input_ids)[0].squeeze(0)
