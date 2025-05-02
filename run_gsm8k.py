@@ -121,3 +121,4 @@ if __name__ == "__main__":
          f'correct num: {sum(answers)}, '
          f'correct rate: {float(sum(answers)) / len(answers)}.')
 
+
