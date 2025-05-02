@@ -1,3 +1,6 @@
+# Ref: https://github.com/kojima-takeshi188/zero_shot_cot
+# Ref: https://github.com/voidism/DoLa
+
 import transformers
 from tqdm import tqdm, trange
 import argparse
@@ -37,6 +40,9 @@ if __name__ == "__main__":
     parser.add_argument("--token_weaken", type=str)
     parser.add_argument("--beta", type=float)
     parser.add_argument("--sink", type=bool)
+    parser.add_argument("--th", type=float)
+    parser.add_argument("--ema", type=bool)
+    parser.add_argument("--including_answers", type=bool)
     parser.add_argument("--sink_layers",
                    type=lambda s: [int(x) for x in s.split(',')],
                    default=[],
@@ -56,7 +62,9 @@ if __name__ == "__main__":
     beta = args.beta
     sink = args.sink
     sink_layers = args.sink_layers
-
+    th = args.th
+    ema = args.ema
+    including_answers = args.including_answers
 
     set_seed(args.seed)
     list_data_dict = load_strqa_jsonl(args.data_path)
@@ -96,7 +104,7 @@ if __name__ == "__main__":
         model_answer = None
         for i in range(retry_times):
             input_text = build_prompt(sample['question'], args.do_shuffle)
-            generate_kwargs = dict(sink_layers=sink_layers,sink=sink,beta=beta,token_weaken=token_weaken,token_enhance=token_enhance,attn_alpha=attn_alpha,start_layer=start_layer,end_layer=end_layer,max_new_tokens=args.max_new_tokens, do_sample=args.do_sample, top_p=args.top_p, top_k=args.top_k, temperature=args.temperature, repetition_penalty=args.repetition_penalty, mode=args.decoding_method, mature_layer=mature_layer, candidate_premature_layers=candidate_premature_layers, relative_top=args.relative_top,relative_top_value=args.relative_top_value,evolution_rate=args.evolution_rate,evolution_scale=args.evolution_scale)
+            generate_kwargs = dict(including_answers=including_answers,th=th,ema=ema,sink_layers=sink_layers,sink=sink,beta=beta,token_weaken=token_weaken,token_enhance=token_enhance,attn_alpha=attn_alpha,start_layer=start_layer,end_layer=end_layer,max_new_tokens=args.max_new_tokens, do_sample=args.do_sample, top_p=args.top_p, top_k=args.top_k, temperature=args.temperature, repetition_penalty=args.repetition_penalty, mode=args.decoding_method, mature_layer=mature_layer, candidate_premature_layers=candidate_premature_layers, relative_top=args.relative_top,relative_top_value=args.relative_top_value,evolution_rate=args.evolution_rate,evolution_scale=args.evolution_scale)
             model_completion, c_dist = llm.generate(input_text, **generate_kwargs)
             for stop_word in stop_word_list:
                 length_to_remove = len(stop_word)
