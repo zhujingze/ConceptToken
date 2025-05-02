@@ -1,3 +1,5 @@
+# Ref: https://github.com/kojima-takeshi188/zero_shot_cot
+# Ref: https://github.com/voidism/DoLa
 
 import transformers
 from tqdm import tqdm, trange
@@ -52,6 +54,12 @@ if __name__ == "__main__":
     parser.add_argument("--beta", type=float)
     parser.add_argument("--sink", type=bool)
     parser.add_argument("--subject", type=str)
+    parser.add_argument("--ema", type=bool)
+    parser.add_argument("--th", type=float)
+    parser.add_argument("--sink_layers",
+                type=lambda s: [int(x) for x in s.split(',')],
+                default=[],
+                help="要启用的层号列表，用逗号分隔（例如：'1,3,5'）")
 
     args = parser.parse_args()
     model_name = args.model_name
@@ -64,6 +72,9 @@ if __name__ == "__main__":
     token_weaken=args.token_weaken
     beta = args.beta
     sink = args.sink
+    sink_layers = args.sink_layers
+    ema = args.ema
+    th = args.th
     tokenizer = AutoTokenizer.from_pretrained(model_name if not 'vicuna' in model_name else 'huggyllama/llama-7b')
     #list_data_dict = load_factor_dataset(args.data_path)
     dataset_all = []
@@ -130,13 +141,13 @@ if __name__ == "__main__":
             false_answers = sample['false_answers']
             subject = sample["subject"]
             
-            generate_kwargs = dict(do_sample=args.do_sample, mode=args.decoding_method, mature_layer=mature_layer, candidate_premature_layers=candidate_premature_layers,post_softmax=True, relative_top=args.relative_top, relative_top_value=args.relative_top_value,evolution_rate=args.evolution_rate,evolution_scale=args.evolution_scale)
-            answer_true_log_prob, c_dist = llm.lm_score(prefix, true_answer, start_layer=start_layer, end_layer=end_layer, attn_alpha=attn_alpha, token_enhance=token_enhance, token_weaken=token_weaken, beta=beta, sink=sink, **generate_kwargs)
+            generate_kwargs = dict(do_sample=args.do_sample, mode=args.decoding_method, mature_layer=mature_layer, candidate_premature_layers=candidate_premature_layers, relative_top=args.relative_top, relative_top_value=args.relative_top_value,evolution_rate=args.evolution_rate,evolution_scale=args.evolution_scale)
+            answer_true_log_prob, c_dist = llm.lm_score(prefix, true_answer, start_layer=start_layer, end_layer=end_layer, attn_alpha=attn_alpha, token_enhance=token_enhance, token_weaken=token_weaken, beta=beta, sink=sink,sink_layers=sink_layers,ema=ema,th=th, **generate_kwargs)
 
             answer_false_log_probs = []
             for answer_false in false_answers:
                 #print(answer_false)
-                answer_false_log_prob, c_dist = llm.lm_score(prefix, answer_false, start_layer=start_layer, end_layer=end_layer, attn_alpha=attn_alpha, token_enhance=token_enhance, token_weaken=token_weaken, beta=beta,sink=sink, **generate_kwargs)
+                answer_false_log_prob, c_dist = llm.lm_score(prefix, answer_false, start_layer=start_layer, end_layer=end_layer, attn_alpha=attn_alpha, token_enhance=token_enhance, token_weaken=token_weaken, beta=beta,sink=sink,sink_layers=sink_layers,ema=ema,th=th, **generate_kwargs)
                 answer_false_log_probs.append(answer_false_log_prob)
 
             is_cor = True
