@@ -17,7 +17,7 @@ def prepare_mc_dataset(subject, csv_file, example_file, tokenizer, max_length=20
             ex_choices = [example_df.iloc[idx, i+1] for i in range(4)]
             ex_answer = example_df.iloc[idx, 5]
             correct_idx = choices.index(ex_answer)
-            example_text += f"Q: {ex_question}\nA: {ex_choices[correct_idx]}\n\n"
+            example_text += f"Question: {ex_question}\nAnswer: {ex_choices[correct_idx]}\n\n"
         example_cache[k] = example_text
 
     # 处理每个问题
@@ -32,7 +32,7 @@ def prepare_mc_dataset(subject, csv_file, example_file, tokenizer, max_length=20
         best_prefix = ""
         for k in range(min(5, len(example_df)), -1, -1):
             base_prompt = f"The following are multiple choice questions (with answers) about {subject}.\n\n{example_cache[k]}"
-            input_text = f"Q: {question}\nA:"
+            input_text = f"Question: {question}\nAnswer:"
             candidate_prefix = base_prompt + input_text
             
             # 检查所有选项长度
