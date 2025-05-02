@@ -1,4 +1,3 @@
-# Ref: https://github.com/voidism/DoLa
 import torch
 import torch.nn.functional as F
 from transformers import AutoTokenizer, AutoModelForCausalLM, LlamaTokenizer
@@ -969,10 +968,10 @@ class SLED_DecodedLLM_MMLU:
 
         return scores_normalized < probs_thresh
 
-    def lm_score(self, input_text1, input_text2, start_layer, end_layer, attn_alpha, token_enhance, token_weaken, beta, sink, pmi=False,
+    def lm_score(self, input_text1, input_text2, start_layer, end_layer, attn_alpha, token_enhance, token_weaken, beta, sink, sink_layers,th,ema,pmi=False,
                 mature_layer=None, premature_layer=None, candidate_premature_layers=[], mode='VanillaGreedy',
                 verbose=True,
-                remove_stop_words=False, relative_top=0.1, relative_top_value=-1000.0, post_softmax=False,
+                remove_stop_words=False, relative_top=0.1, relative_top_value=-1000.0, post_softmax=True,
                 evolution_rate=2, evolution_scale=10, evolution_lower_bound=-2500, **kwargs):
         with torch.no_grad():
             input_text = input_text1 + input_text2
@@ -1003,6 +1002,7 @@ class SLED_DecodedLLM_MMLU:
                 # for ii in [234, 235, 236, 241, 242]:
                 #     print(query_text[ii])
                 p_idx, cn_idx, ca_idx, cv_idx, nc_idx = get_token_indices('llama', query_text)
+                ac_idx = cn_idx + ca_idx + cv_idx
                 if token_enhance == 'cn':
                     token_enhance_idx = cn_idx
                 elif token_enhance == 'ac':
