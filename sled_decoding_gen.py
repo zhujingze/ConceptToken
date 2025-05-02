@@ -5,7 +5,7 @@ from transformers import AutoTokenizer, AutoModelForCausalLM, LlamaTokenizer
 from transformers.generation.stopping_criteria import StoppingCriteriaList, LLamaQaStoppingCriteria
 import numpy as np
 from transformers.generation.logits_process import LogitsProcessorList
-from attention_gen import llama_modify, llama_restore
+from attention_gen_adaptive import llama_modify_adaptive
 import string
 from nltk import pos_tag
 import re
@@ -288,7 +288,7 @@ class SLED_DecodedLLM_StrQA:
 
 
     def generate(self, input_text, sink_layers,sink,beta,token_weaken,
-                token_enhance,attn_alpha,start_layer,end_layer,
+                token_enhance,attn_alpha,start_layer,end_layer, th, ema, including_answers,
                 max_new_tokens=256, top_p=0.95, top_k=0, temperature=0.8, mature_layer=None,
                 premature_layer=None, candidate_premature_layers=[], attn_layers=[], mode='VanillaGreedy', verbose=True,
                 remove_stop_words=False, relative_top=0.1, relative_top_value=-1000.0, post_softmax=True,
@@ -309,6 +309,7 @@ class SLED_DecodedLLM_StrQA:
                 query_tokens = input_ids.tolist()
                 query_text = self.tokenizer.convert_ids_to_tokens(query_tokens[0], skip_special_tokens=False)
                 p_idx, cn_idx, ca_idx, cv_idx, nc_idx = get_token_indices('llama', query_text)
+                ac_idx = cn_idx + ca_idx + cv_idx
                 if token_enhance == 'cn':
                     token_enhance_idx = cn_idx
                 elif token_enhance == 'ac':
@@ -329,8 +330,23 @@ class SLED_DecodedLLM_StrQA:
                 else:
                     token_weaken_idx = None
                 
-                llama_modify(
+                # llama_modify(
+                #     self.model,
+                #     'llama',
+                #     start_layer=start_layer,
+                #     end_layer=end_layer,
+                #     use_attn=True,
+                #     use_cfg=False,
+                #     alpha=attn_alpha,
+                #     first_token_idx=input_ids.shape[-1] - 1,
+                #     token_enhance=token_enhance_idx,
+                #     token_weaken=token_weaken_idx,
+                #     sink = sink,
+                #     special_layers = sink_layers
+                # )
+                llama_modify_adaptive(
                     self.model,
+                    self.tokenizer,
                     'llama',
                     start_layer=start_layer,
                     end_layer=end_layer,
@@ -341,6 +357,12 @@ class SLED_DecodedLLM_StrQA:
                     token_enhance=token_enhance_idx,
                     token_weaken=token_weaken_idx,
                     sink = sink,
+                    n_idx = nc_idx,
+                    c_idx = ac_idx,
+                    s_idx = p_idx,
+                    th = th,
+                    ema = ema,
+                    ave_token = torch.zeros((1, 1), dtype=torch.float32),
                     special_layers = sink_layers
                 )
                 existing = set(sink_layers)
@@ -350,7 +372,7 @@ class SLED_DecodedLLM_StrQA:
                 # logits_processor = CFGLogits(beta, input_ids, self.model, start_layer=start_layer, end_layer=end_layer)
                 # kwargs["logits_processor"] = LogitsProcessorList([logits_processor])
                 outputs = self.model.generate(input_ids, max_length=max_len, num_return_sequences=1, attn_layers = attn_layers,
-                                              output_scores=True, return_dict_in_generate=True, dola_decoding=False, attn_decoding=True, beta=beta,
+                                              output_scores=True, return_dict_in_generate=True, dola_decoding=False, attn_decoding=True, beta=beta, including_answers=including_answers,
                                               top_p=top_p, top_k=top_k, temperature=temperature,
                                               stopping_criteria=self.stopping_criteria, **kwargs)
 
@@ -468,7 +490,7 @@ class SLED_DecodedLLM_GSM8K:
             print("Added stop word: ", stop_word, 'with the ids', stop_word_ids, flush=True)
         self.stopping_criteria.append(LLamaQaStoppingCriteria(list_stop_word_ids))
 
-    def generate(self, input_text, sink_layers,sink,beta,token_weaken,
+    def generate(self, input_text, including_answers,th,ema,sink_layers,sink,beta,token_weaken,
         token_enhance,attn_alpha,start_layer,end_layer,
         max_new_tokens=256, top_p=0.95, top_k=0, temperature=0.8, mature_layer=None,
         premature_layer=None, candidate_premature_layers=[], attn_layers=[], mode='VanillaGreedy', verbose=True,
@@ -490,6 +512,7 @@ class SLED_DecodedLLM_GSM8K:
                 query_tokens = input_ids.tolist()
                 query_text = self.tokenizer.convert_ids_to_tokens(query_tokens[0], skip_special_tokens=False)
                 p_idx, cn_idx, ca_idx, cv_idx, nc_idx = get_token_indices('llama', query_text)
+                ac_idx = cn_idx + ca_idx + cv_idx
                 if token_enhance == 'cn':
                     token_enhance_idx = cn_idx
                 elif token_enhance == 'ac':
@@ -510,8 +533,9 @@ class SLED_DecodedLLM_GSM8K:
                 else:
                     token_weaken_idx = None
                 
-                llama_modify(
+                llama_modify_adaptive(
                     self.model,
+                    self.tokenizer,
                     'llama',
                     start_layer=start_layer,
                     end_layer=end_layer,
@@ -522,6 +546,12 @@ class SLED_DecodedLLM_GSM8K:
                     token_enhance=token_enhance_idx,
                     token_weaken=token_weaken_idx,
                     sink = sink,
+                    n_idx = nc_idx,
+                    c_idx = ac_idx,
+                    s_idx = p_idx,
+                    th = th,
+                    ema = ema,
+                    ave_token = torch.zeros((1, 1), dtype=torch.float32),
                     special_layers = sink_layers
                 )
                 existing = set(sink_layers)
@@ -531,7 +561,7 @@ class SLED_DecodedLLM_GSM8K:
                 # logits_processor = CFGLogits(beta, input_ids, self.model, start_layer=start_layer, end_layer=end_layer)
                 # kwargs["logits_processor"] = LogitsProcessorList([logits_processor])
                 outputs = self.model.generate(input_ids, max_length=max_len, num_return_sequences=1, attn_layers = attn_layers,
-                                              output_scores=True, return_dict_in_generate=True, dola_decoding=False, attn_decoding=True, beta=beta,
+                                              output_scores=True, return_dict_in_generate=True, dola_decoding=False, attn_decoding=True, beta=beta, including_answers=including_answers,
                                               top_p=top_p, top_k=top_k, temperature=temperature,
                                               stopping_criteria=self.stopping_criteria, **kwargs)
                 
