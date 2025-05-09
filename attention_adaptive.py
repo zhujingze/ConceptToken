@@ -108,6 +108,7 @@ def llama_new_forward(
         model = self.model
         ema = self.ema
         start_layer = self.start_layer
+        wk_c = self.wk_c
     else:
         use_attn = False
     attn_weights_sink = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
@@ -133,7 +134,7 @@ def llama_new_forward(
                 + attn_weights[:, :, first_token_idx:, token_enhance]
             )
             
-        if token_weaken:
+        if token_weaken and wk_c:
             if ema:
                 if layer_idx != start_layer:
                     prev_layer = model.model.layers[layer_idx - 1]
@@ -197,6 +198,8 @@ def llama_new_forward(
             # attn_weights[:, :, first_token_idx:, token_weaken] = min_values.expand_as(
             #     attn_weights[:, :, first_token_idx:, token_weaken]
             # )
+        elif token_weaken and not wk_c:
+            attn_weights[:, :, first_token_idx:, token_weaken] = -1e2
 
         if sink:
             # 提取目标区域（first_token_idx之后的token）
@@ -206,8 +209,7 @@ def llama_new_forward(
             avg_attn = sink_attn.mean(dim=1)  # 形状: [batch, rows, cols]
             #print('attn',avg_attn.size())
             # 统计哪些位置的平均值超过0.3
-            over_threshold = avg_attn > 0.2  # 形状: [batch, rows, cols]
-            
+            over_threshold = avg_attn > 0.1  # 形状: [batch, rows, cols]
             # 获取所有满足条件的唯一 token 索引
             if over_threshold.any():
                 # 提取所有超过阈值的列索引（cols）并去重
@@ -216,7 +218,6 @@ def llama_new_forward(
                 unique_indices = col_indices.unique().tolist()  # 去重并转为列表
             else:
                 unique_indices = []
-                
             attn_weights[:, :, first_token_idx:, unique_indices] = -1e2
             # if len(unique_indices) != 0:
             #     attn_weights[:, :, first_token_idx:, unique_indices] = (
@@ -271,6 +272,7 @@ def llama_modify_adaptive(
     s_idx:list,
     th: float,
     ema: bool,
+    wk_c: bool,
     ave_token: Optional[torch.Tensor] = None, ###C,P,N
     special_layers: Optional[List[int]] = None
 ):
@@ -314,6 +316,7 @@ def llama_modify_adaptive(
         self_attn.start_layer = start_layer
         # 如果在 special_layers 中则覆盖 sink 值
         self_attn.sink = (i in special_layers) if special_layers else False
+        self_attn.wk_c = wk_c
 
         # 修改前向传播
         self_attn.forward = types.MethodType(llama_new_forward, self_attn)
@@ -334,10 +337,21 @@ def llama_modify_adaptive(
             self_attn.alpha = alpha
             self_attn.use_attn = True
             self_attn.first_token_idx = first_token_idx
-            self_attn.sink = True
+            self_attn.sink = sink
             self_attn.token_enhance = None
             self_attn.token_weaken = None
             self_attn.forward = types.MethodType(llama_new_forward, self_attn)
+
+            self_attn.ema = None
+            self_attn.th = None
+            self_attn.n_idx = None
+            self_attn.c_idx = None
+            self_attn.s_idx = None
+            self_attn.ave_token = None
+            self_attn.start_layer = None
+            self_attn.layer_idx = i  # 当前层索引
+            self_attn.model = None
+            self_attn.wk_c = None
             
             # 确保已注入必要属性（防御性编程）
             # if not hasattr(self_attn, 'use_attn'):
@@ -353,6 +367,6 @@ def llama_restore_adaptive(model,model_name, start_layer: int, end_layer: int):
         if 'llama' in model_type:
             self_attn.forward = types.MethodType(LlamaAttention.forward, self_attn)
     
-        for attr in ["use_attn", "alpha", "first_token_idx", "token_enhance", "token_weaken", "sink"]:
-            if hasattr(self_attn, attr):
-                delattr(self_attn, attr)
+        # for attr in ["use_attn", "alpha", "first_token_idx", "token_enhance", "token_weaken", "sink"]:
+        #     if hasattr(self_attn, attr):
+        #         delattr(self_attn, attr)
