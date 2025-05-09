@@ -1,4 +1,4 @@
-name: hicd
+name: concept
 channels:
   - defaults
   - conda-forge
