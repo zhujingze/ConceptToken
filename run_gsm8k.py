@@ -40,6 +40,8 @@ if __name__ == "__main__":
     parser.add_argument("--beta", type=float)
     parser.add_argument("--th", type=float)
     parser.add_argument("--ema", type=bool)
+    parser.add_argument("--single", type=bool)
+    parser.add_argument("--ave", type=bool)
     parser.add_argument("--including_answers", type=bool)
     parser.add_argument("--sink", type=bool)
     parser.add_argument("--sink_layers",
@@ -64,8 +66,10 @@ if __name__ == "__main__":
     sink_layers = args.sink_layers
     th = args.th
     ema = args.ema
+    single = args.single
+    ave = args.ave
     including_answers = args.including_answers
-
+    model_name_input = os.path.basename(model_name.rstrip('/'))
 
     
     llm = SLED_DecodedLLM(model_name, device, num_gpus, args.max_gpu_memory)
@@ -95,8 +99,8 @@ if __name__ == "__main__":
     result_dict = {'is_correct': [], 'model_answer': [], 'model_completion': [], 'full_input_text': []}
     for sample in tqdm(list_data_dict[:]):
         input_text = build_prompt(sample['instruction'], args.do_shuffle)
-        generate_kwargs = dict(max_new_tokens=args.max_new_tokens, do_sample=args.do_sample, top_p=args.top_p,
-                               including_answers=including_answers,th=th,ema=ema,
+        generate_kwargs = dict(single=single,ave=ave,max_new_tokens=args.max_new_tokens, do_sample=args.do_sample, top_p=args.top_p,
+                               including_answers=including_answers,th=th,ema=ema,model_name_input=model_name_input,
                                sink_layers=sink_layers,sink=sink,beta=beta,token_weaken=token_weaken,token_enhance=token_enhance,
                                attn_alpha=attn_alpha,start_layer=start_layer,end_layer=end_layer,
                                top_k=args.top_k, temperature=args.temperature, repetition_penalty=args.repetition_penalty,
@@ -120,5 +124,3 @@ if __name__ == "__main__":
     print(f'Num of total question: {len(answers)}, '
          f'correct num: {sum(answers)}, '
          f'correct rate: {float(sum(answers)) / len(answers)}.')
-
-
