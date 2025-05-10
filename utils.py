@@ -148,15 +148,17 @@ def is_new_word_start(token_text, model_type, start_sym):
 
 def process_new_token(next_token, model, model_name,input_ids, attn_layers):
     start_sym = determine_start_symbol(model_name)
-    next_token_text = model.layers[attn_layers[0]].self_attn.tokenizer.convert_ids_to_tokens(next_token, skip_special_tokens=False)
+    next_token_cpu = next_token.cpu().numpy()
+    next_token_text = model.layers[attn_layers[0]].self_attn.tokenizer.convert_ids_to_tokens(next_token_cpu, skip_special_tokens=False)
     stored_tokens = model.layers[attn_layers[0]].self_attn.stored_tokens
     punctuation = set(string.punctuation)
-    
+    #print(stored_tokens)
     # 判断是否是新词开始
     is_new_word = is_new_word_start(next_token_text[0], model_name, start_sym)
-    
+    #print(is_new_word)
     if is_new_word:
         if stored_tokens:
+            #print(stored_tokens)
             # 合并词并检查词性
             merged_word = ''
             for i, tok in enumerate(stored_tokens):
@@ -184,7 +186,12 @@ def process_new_token(next_token, model, model_name,input_ids, attn_layers):
                         k = len(stored_tokens)
                         start_idx = current_length - k
                         indices = list(range(start_idx, current_length))
-                        model.layers[attn_layers[0]].self_attn.token_weaken.extend(indices)
+                        if model.layers[attn_layers[0]].self_attn.token_weaken:
+                            model.layers[attn_layers[0]].self_attn.token_weaken.extend(indices)
+                #     else:
+
+                # else:
+
         # 清空并处理当前 token
         model.layers[attn_layers[0]].self_attn.stored_tokens = []
         # 排除特殊符号和纯标点
@@ -1891,7 +1898,10 @@ class GenerationMixin:
                 return_dict_in_generate=generation_config.return_dict_in_generate,
                 synced_gpus=synced_gpus,
                 attn_layers=attn_layers,
+                sink_layers=sink_layers,
                 beta=beta,
+                single=single,
+                ave=ave,
                 including_answers=including_answers,
                 relative_top=relative_top,
                 streamer=streamer,
@@ -2647,11 +2657,14 @@ class GenerationMixin:
         output_hidden_states: Optional[bool] = None,
         output_scores: Optional[bool] = None,
         attn_layers: Optional[List[int]] = None,
+        sink_layers: Optional[List[int]] = None,
         relative_top: float = 0.1,
         return_dict_in_generate: Optional[bool] = None,
         synced_gpus: bool = False,
         beta: float = None,
         including_answers: bool = False,
+        single: bool = False,
+        ave: bool = False,
         streamer: Optional["BaseStreamer"] = None,
         **model_kwargs,
     ) -> Union[GreedySearchOutput, torch.LongTensor]:
@@ -2725,41 +2738,105 @@ class GenerationMixin:
 
             if synced_gpus and this_peer_finished:
                 continue  # don't waste resources running the code we don't need
-
             next_token_logits_mod = outputs_mod.logits[:, -1, :]
-            
-            for i in attn_layers:
-                if hasattr(self.model.layers[i].self_attn, "use_attn"):
-                    #print("False?",self.model.layers[i].self_attn.use_cfg)
-                    self.model.layers[i].self_attn.use_cfg = True
-                else:
-                    raise ValueError("attn_layer does not have 'use_attn'! ")
-                    
-            outputs_ori = self(
-                **model_inputs,
-                return_dict=True,
-                output_attentions=output_attentions,
-                output_hidden_states=output_hidden_states,
-            )
-            next_token_logits_ori = outputs_ori.logits[:, -1, :]
-            
-            for i in attn_layers:
-                if hasattr(self.model.layers[i].self_attn, "use_attn"):
-                    #print('True?',self.model.layers[i].self_attn.use_cfg)
-                    self.model.layers[i].self_attn.use_cfg = False
-                else:
-                    raise ValueError("attn_layer does not have 'use_attn'! ")
-            
-            if relative_top > 0.0:
-                next_token_logits_ori = self.relative_top_filter(next_token_logits_ori, relative_top)
-                next_token_logits_mod = next_token_logits_mod.log_softmax(dim=-1)
-                mask = next_token_logits_ori < -1e3
-                next_token_logits_mod[mask] = -1e3
+            ###ori
+            if single:
+                for i in attn_layers:
+                    if hasattr(self.model.layers[i].self_attn, "use_attn"):
+                        #print("False?",self.model.layers[i].self_attn.use_cfg)
+                        self.model.layers[i].self_attn.use_cfg = True
+                    else:
+                        raise ValueError("attn_layer does not have 'use_attn'! ")
+                        
+                outputs_ori = self(
+                    **model_inputs,
+                    return_dict=True,
+                    output_attentions=output_attentions,
+                    output_hidden_states=output_hidden_states,
+                )
+                next_token_logits_ori = outputs_ori.logits[:, -1, :]
+                
+                for i in attn_layers:
+                    if hasattr(self.model.layers[i].self_attn, "use_attn"):
+                        #print('True?',self.model.layers[i].self_attn.use_cfg)
+                        self.model.layers[i].self_attn.use_cfg = False
+                    else:
+                        raise ValueError("attn_layer does not have 'use_attn'! ")
+                
+                if relative_top > 0.0:
+                    next_token_logits_ori = self.relative_top_filter(next_token_logits_ori, relative_top)
+                    next_token_logits_mod = next_token_logits_mod.log_softmax(dim=-1)
+                    mask = next_token_logits_ori < -1e3
+                    next_token_logits_mod[mask] = -1e3
 
-            logits = beta*next_token_logits_ori + (next_token_logits_ori- next_token_logits_mod)
-            #print('ori',next_token_logits_ori,'mod',next_token_logits_mod)
-            next_token_logits = logits
-            # pre-process distribution
+                logits = beta*next_token_logits_ori + (next_token_logits_ori- next_token_logits_mod)
+                next_token_logits = logits
+
+            ###ave
+            if ave:
+                for i in attn_layers:
+                    if hasattr(self.model.layers[i].self_attn, "use_attn"):
+                        #print("False?",self.model.layers[i].self_attn.use_cfg)
+                        self.model.layers[i].self_attn.use_cfg = True
+                    else:
+                        raise ValueError("attn_layer does not have 'use_attn'! ")
+                        
+                outputs_ori = self(
+                    **model_inputs,
+                    return_dict=True,
+                    output_attentions=output_attentions,
+                    output_hidden_states=output_hidden_states,
+                )
+                next_token_logits_ori = outputs_ori.logits[:, -1, :]
+                
+                for i in sink_layers:    
+                    layer = self.model.layers[i]
+                    self_attn = layer.self_attn
+                    self_attn.use_attn = True
+
+                outputs_sink = self(
+                    **model_inputs,
+                    return_dict=True,
+                    output_attentions=output_attentions,
+                    output_hidden_states=output_hidden_states,
+                )
+                next_token_logits_sink = outputs_sink.logits[:, -1, :]
+
+                for i in sink_layers:    
+                    layer = self.model.layers[i]
+                    self_attn = layer.self_attn
+                    self_attn.use_attn = False
+
+                for i in attn_layers:
+                    if hasattr(self.model.layers[i].self_attn, "use_attn"):
+                        #print('True?',self.model.layers[i].self_attn.use_cfg)
+                        self.model.layers[i].self_attn.use_cfg = False
+                    else:
+                        raise ValueError("attn_layer does not have 'use_attn'! ")
+                
+                if relative_top > 0.0:
+                    next_token_logits_ori = self.relative_top_filter(next_token_logits_ori, relative_top)
+                    next_token_logits_mod = next_token_logits_mod.log_softmax(dim=-1)
+                    mask = next_token_logits_ori < -1e3
+                    next_token_logits_mod[mask] = -1e3
+
+                logits = beta*next_token_logits_ori + (next_token_logits_ori- next_token_logits_mod)
+                next_token_logits = logits
+
+                if relative_top > 0.0:
+                    next_token_logits_ori = self.relative_top_filter(next_token_logits_ori, relative_top)
+                    next_token_logits_sink = next_token_logits_sink.log_softmax(dim=-1)
+                    mask = next_token_logits_sink < -1e3
+                    next_token_logits_mod[mask] = -1e3
+
+                logits = beta*next_token_logits_ori + (next_token_logits_ori- next_token_logits_mod)
+                next_token_logits = logits
+
+                logits2 = beta*next_token_logits_ori + (next_token_logits_ori- next_token_logits_sink)
+                next_token_logits2 = logits2
+                next_token_logits = (next_token_logits + next_token_logits2) / 2
+
+
             next_tokens_scores = logits_processor(input_ids, next_token_logits)
 
             # Store scores, attentions and hidden_states when required
@@ -2799,6 +2876,7 @@ class GenerationMixin:
                             self.model.layers[i].self_attn.token_weaken = token_weaken_new
                         else:
                             raise ValueError("attn_layer does not have 'use_attn'! ")
+            #print(self.model.layers[attn_layers[0]].self_attn.token_weaken)
             #print(self.model.layers[attn_layers[2]].self_attn.token_weaken)
             #print('token_weaken',self.model.layers[attn_layers[0]].self_attn.token_weaken)
             # 获取需要弱化的 token 索引
