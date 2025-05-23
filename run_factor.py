@@ -37,6 +37,7 @@ if __name__ == "__main__":
     parser.add_argument("--sink", type=bool)
     parser.add_argument("--ema", type=bool)
     parser.add_argument("--th", type=float)
+    parser.add_argument("--single", type=bool, default=False)
     parser.add_argument("--sink_layers",
                 type=lambda s: [int(x) for x in s.split(',')],
                 default=[],
@@ -55,8 +56,9 @@ if __name__ == "__main__":
     sink = args.sink
     sink_layers=args.sink_layers
     th = args.th
+    single=single=args.single
     ema = args.ema
-    
+    model_name_input = os.path.basename(model_name.rstrip('/'))
     list_data_dict = load_factor_dataset(args.data_path)
 
     
@@ -92,16 +94,18 @@ if __name__ == "__main__":
         context = sample['prefix']
         answer_true = ' ' + sample['completion']
         answers_false = []
-        # print('prefix',context)
+        #print('prefix',context)
+        #print('ans_t',sample['completion'])
         for i in range(3):
+            #print('ans_f',sample[f'contradiction_{i}'])
             answers_false.append(' ' + sample[f'contradiction_{i}'])
         generate_kwargs = dict(do_sample=args.do_sample, mode=args.decoding_method, mature_layer=mature_layer, candidate_premature_layers=candidate_premature_layers,post_softmax=True, relative_top=args.relative_top, relative_top_value=args.relative_top_value,evolution_rate=args.evolution_rate,evolution_scale=args.evolution_scale)
-        answer_true_log_prob, c_dist = llm.lm_score(context, answer_true, start_layer=start_layer, end_layer=end_layer, attn_alpha=attn_alpha, token_enhance=token_enhance, token_weaken=token_weaken, beta=beta, sink=sink, sink_layers=sink_layers,th=th,ema=ema,**generate_kwargs)
-        # print('true',answer_true)
+        answer_true_log_prob, c_dist = llm.lm_score(model_name_input,context, answer_true, single=single,start_layer=start_layer, end_layer=end_layer, attn_alpha=attn_alpha, token_enhance=token_enhance, token_weaken=token_weaken, beta=beta, sink=sink, sink_layers=sink_layers,th=th,ema=ema,**generate_kwargs)
+        #print('true',answer_true)
         answer_false_log_probs = []
         for answer_false in answers_false:
-            # print('false',answer_false)
-            answer_false_log_prob, c_dist = llm.lm_score(context, answer_false, start_layer=start_layer, end_layer=end_layer, attn_alpha=attn_alpha, token_enhance=token_enhance, token_weaken=token_weaken, beta=beta,sink=sink,sink_layers=sink_layers,th=th,ema=ema, **generate_kwargs)
+            #print('false',answer_false)
+            answer_false_log_prob, c_dist = llm.lm_score(model_name_input,context, answer_false, single=single,start_layer=start_layer, end_layer=end_layer, attn_alpha=attn_alpha, token_enhance=token_enhance, token_weaken=token_weaken, beta=beta,sink=sink,sink_layers=sink_layers,th=th,ema=ema, **generate_kwargs)
 
             answer_false_log_probs.append(answer_false_log_prob)
 
