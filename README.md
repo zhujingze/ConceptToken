@@ -45,7 +45,7 @@ python run_strqa.py  --model_name meta-llama/Llama-2-7b-hf  --data_path Data/Str
 python run_strqa.py  --model_name meta-llama/Llama-2-7b-hf  --data_path Data/StrategyQA --output_path output-path.json --num_gpus 1 --decoding_method attn --start_layer 5
 --end_layer 16 --token_weaken ac --th 0.05 --ave True --sink True --sink_layers 0,1,2,3,4 --beta 1
 ```
-###HellaSwag
+### HellaSwag
 ```bash
 python run_hellaswag.py --model_name meta-llama/Llama-2-7b-hf  --data_path Data/Hellaswag  --output_path output-path.json --num_gpus 1 --decoding_method VanillaGreedy
 python run_hellaswag.py --model_name meta-llama/Llama-2-7b-hf  --data_path Data/Hellaswag  --output_path output-path.json --num_gpus 1 --decoding_method dola
