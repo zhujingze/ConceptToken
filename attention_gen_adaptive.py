@@ -3,7 +3,7 @@ from typing import Optional, Tuple
 import torch
 import torch.nn as nn
 from transformers.models.llama.modeling_llama import apply_rotary_pos_emb, LlamaAttention, repeat_kv
-import types
+import types, typing
 from typing import Optional, Tuple, TypedDict
 from transformers.cache_utils import Cache
 import sys
